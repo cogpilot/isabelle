@@ -214,15 +214,27 @@ fun suggest_induction ctxt tm =
 
 (* Timeout messages with varying levels of sympathy *)
 val timeout_messages = [
-  "Time's up! %PROVER% ran out of patience after %TIME%s. The theorem remains defiant.",
-  "Tick tock! %PROVER% couldn't crack it in %TIME%s. The proof space is vast indeed.",
-  "%PROVER% timed out at %TIME%s. Some theorems just want to watch the world burn.",
-  "The hourglass is empty. %PROVER% searched %TIME%s and found only existential dread.",
-  "%TIME% seconds of computation, zero proofs found. %PROVER% suggests trying a different approach.",
-  "Timeout after %TIME%s! Even %PROVER%'s legendary patience has limits.",
-  "%PROVER% stared into the proof space for %TIME%s. The proof space stared back.",
-  "The clock ran out on %PROVER% at %TIME%s. Perhaps more lemmas are needed?"
+  "Time's up! PROVER ran out of patience after TIMEs. The theorem remains defiant.",
+  "Tick tock! PROVER couldn't crack it in TIMEs. The proof space is vast indeed.",
+  "PROVER timed out at TIMEs. Some theorems just want to watch the world burn.",
+  "The hourglass is empty. PROVER searched TIMEs and found only existential dread.",
+  "TIMEs of computation, zero proofs. PROVER suggests a different approach.",
+  "Timeout after TIMEs! Even PROVER's legendary patience has limits.",
+  "PROVER stared into the proof space for TIMEs. The proof space stared back."
 ]
+
+(* Simple string replacement utility *)
+fun replace_all needle replacement haystack =
+  let
+    fun loop acc [] = String.concat (rev acc)
+      | loop acc (c :: cs) =
+          let val rest = String.implode (c :: cs) in
+            if String.isPrefix needle rest
+            then loop (replacement :: acc) 
+                      (String.explode (String.extract (rest, String.size needle, NONE)))
+            else loop (str c :: acc) cs
+          end
+  in loop [] (String.explode haystack) end
 
 fun generate_witty_timeout prover timeout =
   let
@@ -231,34 +243,19 @@ fun generate_witty_timeout prover timeout =
     val time_str = Real.fmt (StringCvt.FIX (SOME 1)) (Time.toReal timeout)
   in
     template
-    |> String.translate (fn c => str c)
-    |> (fn s => String.concatWith prover (String.tokens (fn c => c = #"%") s))
-    |> (fn s =>
-         String.map (fn #"T" => #" " | #"I" => #" " | #"M" => #" " | #"E" => #" " | c => c) s)
-    (* Simple substitution since we can't use regexp easily *)
-    |> (fn _ => 
-         String.concatWith prover 
-           (String.tokens (fn c => c = #"%") template)
-         |> (fn s => if String.isSubstring "TIME" s 
-                     then String.concatWith time_str 
-                            [String.extract (s, 0, SOME (String.size s - 4)), ""]
-                     else s))
-  in
-    template
-    |> (fn s => String.translate (fn #"%" => "" | c => str c) s)
-    |> (fn _ => (String.concatWith prover (String.fields (fn c => c = #"%") 
-                  (String.concatWith time_str (String.fields (fn c => c = #"%") template)))))
+    |> replace_all "PROVER" prover
+    |> replace_all "TIME" time_str
   end
   handle _ => prover ^ " timed out after " ^ 
               Real.fmt (StringCvt.FIX (SOME 1)) (Time.toReal timeout) ^ "s. Better luck next time!"
 
 (* Challenge the assumptions being used *)
 val assumption_challenges = [
-  "I see you're using %N% fact(s). Are you SURE they're all necessary?",
-  "Interesting choice of lemmas... %N% facts seems like %ASSESSMENT%.",
-  "Your proof depends on %N% external facts. The minimizer judges you silently.",
-  "%N% facts! Back in my day, we proved things from first principles!",
-  "A proof using %N% facts is either elegant or desperate. Time will tell."
+  "I see you're using FACTCOUNT fact(s). Are you SURE they're all necessary?",
+  "Interesting choice of lemmas... FACTCOUNT facts seems like ASSESSMENT.",
+  "Your proof depends on FACTCOUNT external facts. The minimizer judges you silently.",
+  "FACTCOUNT facts! Back in my day, we proved things from first principles!",
+  "A proof using FACTCOUNT facts is either elegant or desperate. Time will tell."
 ]
 
 fun challenge_assumptions facts =
@@ -274,8 +271,8 @@ fun challenge_assumptions facts =
     val template = List.nth (assumption_challenges, Int.fromLarge idx)
   in
     template
-    |> (fn s => String.concatWith (Int.toString n) (String.fields (fn c => c = #"%") s))
-    |> (fn s => String.concatWith assessment (String.fields (fn c => c = #"%") s))
+    |> replace_all "FACTCOUNT" (Int.toString n)
+    |> replace_all "ASSESSMENT" assessment
   end
   handle _ => Int.toString (List.length facts) ^ " facts used. Make of that what you will."
 
