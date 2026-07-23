@@ -424,6 +424,7 @@ session "HOL-Metis_Examples" (timing) in Metis_Examples = "HOL" +
     Proxies
     Sets
     Sledgehammer_Isar_Proofs
+    Sledgehammer_Chatbot_Demo
     Tarski
     Trans_Closure
 
