@@ -48,5 +48,6 @@ ML_file \<open>Tools/Sledgehammer/sledgehammer_mash.ML\<close>
 ML_file \<open>Tools/Sledgehammer/sledgehammer.ML\<close>
 ML_file \<open>Tools/Sledgehammer/sledgehammer_commands.ML\<close>
 ML_file \<open>Tools/Sledgehammer/sledgehammer_tactics.ML\<close>
+ML_file \<open>Tools/Sledgehammer/sledgehammer_chatbot.ML\<close>
 
 end
