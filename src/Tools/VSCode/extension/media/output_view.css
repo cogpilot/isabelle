@@ -35,13 +35,14 @@ form > * {
 }
 
 a {
-  color: var(--vscode-textLink-foreground);
+  cursor: pointer;
+  color: inherit;
   text-decoration: none;
 }
 
 a:hover,
 a:active {
-  color: var(--vscode-textLink-activeForeground);
+  text-decoration: underline;
 }
 
 code {
@@ -107,11 +108,12 @@ textarea::placeholder {
   margin-top: 5px;
 }
 
-/* line break for pre  */
-pre {
-  white-space: pre-wrap;     /* Since CSS 2.1 */
-  white-space: -moz-pre-wrap;/* Mozilla, since 1999 */
-  white-space: -pre-wrap;    /* Opera 4-6 */
-  white-space: -o-pre-wrap;  /* Opera 7 */
-  word-wrap: break-word;     /* Internet Explorer 5.5+ */
+sub, sup {
+  font-size: 80%;
+}
+
+.hidden {
+  font-family: Vacuous;
+  font-size: 1%;
+  color: rgba(255,255,255,0);
 }

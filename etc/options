@@ -146,7 +146,7 @@ section "Global Session Parameters"
 option context : string = "" for content
   -- "free-form information for session content (to be interpreted in Isabelle/ML)"
 
-option condition : string = "" for content ML_process
+option condition : string = "" for content
   -- "required environment variables for subsequent theories (separated by commas)"
 
 option timeout : real = 0 for build
@@ -167,11 +167,20 @@ option profiling : string = "" (standard "time") for build ML_process
 option profiling_dir : string = ""
   -- "auxiliary directory for \"isabelle profiling\" tool"
 
-option system_log : string = "" (standard "-") for build
+option system_log : string = "-" (standard "-") for build
   -- "output for system log messages (log file or \"-\" for console progress)"
 
 option system_heaps : bool = false for build
   -- "store session heaps in $ISABELLE_HEAPS_SYSTEM, not $ISABELLE_HEAPS"
+
+option pide_prover_verbose : bool = false for build
+  -- "output verbose messages for PIDE prover operations"
+
+option pide_editor_verbose : bool = false for build
+  -- "output verbose messages for PIDE editor operations"
+
+option pide_editor_timing : bool = false for build
+  -- "output timing messages for PIDE editor operations"
 
 
 section "ML System"
@@ -541,12 +550,6 @@ option build_manager_database_port : int = 5432 for connection
 option build_manager_database_ssh_host : string = "" for connection
 option build_manager_database_ssh_user : string = "" for connection
 option build_manager_database_ssh_port : int = 0 for connection
-
-
-section "Isabelle/Scala/ML system channel"
-
-option system_channel_address : string = "" for connection
-option system_channel_password : string = "" for connection
 
 
 section "Bash process execution server"

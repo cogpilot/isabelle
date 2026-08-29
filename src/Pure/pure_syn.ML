@@ -46,9 +46,12 @@ val _ =
         {markdown = true, markup = XML.enclose "%\n" "\n"});
 
 val _ =
-  Outer_Syntax.command ("theory", \<^here>) "begin theory"
-    (Thy_Header.args >>
-      (fn _ => Toplevel.init_theory (fn () => error "Missing theory initialization")));
+  Outer_Syntax.command (Thy_Header.theoryN, \<^here>) "begin theory"
+    (Thy_Header.args >> (K Toplevel.prepare_init));
+
+val _ =
+  Outer_Syntax.command (Thy_Header.endN, \<^here>) "end context"
+    (Scan.succeed Toplevel.end_context);
 
 
 val bootstrap_thy = Context.the_global_context ();

@@ -1,6 +1,6 @@
 (*  Title:      Pure/ROOT.ML
     Author:     Makarius
-    UUID:       d5ce53b8-9677-4370-b93c-77a3816d6989
+    UUID:       19c6473d-aac3-42c8-bb89-3a2ea9b2b75e
 
 Main entry point for the Isabelle/Pure bootstrap process.
 
@@ -326,18 +326,16 @@ ML_file "Build/resources.ML";
 ML_file "General/message_digest.ML";
 ML_file "PIDE/command.ML";
 ML_file "PIDE/query_operation.ML";
-ML_file "Thy/thy_info.ML";
+ML_file "Thy/thy_presentation.ML";
 ML_file "thm_deps.ML";
 ML_file "Build/export_theory.ML";
 ML_file "Build/sessions.ML";
 ML_file "PIDE/session.ML";
-ML_file "PIDE/document.ML";
 
 (*ML add-ons*)
 ML_file "ML/ml_pp.ML";
 ML_file "ML/ml_instantiate.ML";
 ML_file "ML/ml_file.ML";
-ML_file "ML/ml_pid.ML";
 
 (*theory and proof operations*)
 ML_file "Isar/isar_cmd.ML";
@@ -351,6 +349,7 @@ ML_file "System/isabelle_process.ML";
 ML_file "System/scala_compiler.ML";
 ML_file "System/isabelle_tool.ML";
 ML_file "Build/build.ML";
+ML_file "PIDE/document.ML";
 ML_file "PIDE/protocol.ML";
 ML_file "General/output_primitives_virtual.ML";
 

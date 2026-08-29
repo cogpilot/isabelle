@@ -98,7 +98,7 @@ and output_document ctxt {markdown} source =
     and output_blocks blocks =
       separate (XML.Text "\n\n") (map (Latex.block o output_block) blocks);
   in
-    if Toplevel.is_skipped_proof (Toplevel.presentation_state ctxt) then []
+    if Toplevel.is_skipped (Toplevel.presentation_state ctxt) then []
     else if markdown andalso exists (Markdown.is_control o Symbol_Pos.symbol) syms
     then
       let
@@ -171,12 +171,12 @@ fun output_token ctxt tok =
     | Token.Comment (SOME Comment.Marker) => []
     | Token.Command =>
         let
-          val name = (Token.content_of tok);
+          val kind = Keyword.command_kind keywords (Token.content_of tok);
           val bg =
-            if Keyword.is_theory_end keywords name then "\\isakeywordTWO{"
-            else if Keyword.is_proof_asm keywords name orelse
-              Keyword.is_proof_asm_goal keywords name then "\\isakeywordTHREE{"
-            else if Keyword.is_proof_asm_goal keywords name then "\\isakeywordTHREE{"
+            if Symset.member Keyword.theory_end_kinds kind then "\\isakeywordTWO{"
+            else if Symset.member Keyword.proof_asm_kinds kind orelse
+              Symset.member Keyword.proof_asm_goal_kinds kind then "\\isakeywordTHREE{"
+            else if Symset.member Keyword.proof_asm_goal_kinds kind then "\\isakeywordTHREE{"
             else "\\isakeywordONE{";
         in output false bg "}" end
     | Token.Keyword =>
@@ -277,16 +277,16 @@ fun close_delim delim e = edge #1 bg_delim e #> delim #> edge #1 en_delim e;
 fun document_tag cmd_pos state state' tagging_stack =
   let
     val ctxt' = Toplevel.presentation_context state';
-    val nesting = Toplevel.level state' - Toplevel.level state;
+    val proof_nesting = Toplevel.proof_level state' - Toplevel.proof_level state;
 
     val (tagging, taggings) = tagging_stack;
     val (tag', tagging') = Document_Source.update_tagging ctxt' tagging;
 
     val tagging_stack' =
-      if nesting = 0 andalso not (Toplevel.is_proof state) then tagging_stack
-      else if nesting >= 0 then (tagging', replicate nesting tagging @ taggings)
+      if proof_nesting = 0 andalso not (Toplevel.is_proof state) then tagging_stack
+      else if proof_nesting >= 0 then (tagging', replicate proof_nesting tagging @ taggings)
       else
-        (case drop (~ nesting - 1) taggings of
+        (case drop (~ proof_nesting - 1) taggings of
           tg :: tgs => (tg, tgs)
         | [] => err_bad_nesting (Position.here cmd_pos));
   in (tag', tagging_stack') end;
@@ -308,8 +308,10 @@ fun make_command_tag options keywords =
   in
     fn name => fn st => fn st' => fn active_tag =>
       let
+        val kind = Keyword.command_kind keywords name;
         val keyword_tags =
-          if Keyword.is_theory_end keywords name andalso Toplevel.is_end_theory st' then ["theory"]
+          if Symset.member Keyword.theory_end_kinds kind andalso Toplevel.is_end_theory st'
+          then ["theory"]
           else Keyword.command_tags keywords name;
         val command_tags =
           the_list (AList.lookup (op =) document_tags_command name) @
@@ -318,7 +320,7 @@ fun make_command_tag options keywords =
           (case command_tags of
             default_tag :: _ => SOME default_tag
           | [] =>
-              if Keyword.is_vacuous keywords name andalso Toplevel.is_proof st
+              if Symset.member Keyword.vacuous_kinds kind andalso Toplevel.is_proof st
               then active_tag else NONE);
       in active_tag' end
   end;
@@ -400,8 +402,9 @@ fun output_command keywords = Scan.some (fn tok =>
   if Token.is_command tok then
     let
       val name = Token.content_of tok;
-      val is_document = Keyword.is_document keywords name;
-      val is_document_raw = Keyword.is_document_raw keywords name;
+      val kind = Keyword.command_kind keywords name;
+      val is_document = Symset.member Keyword.document_kinds kind;
+      val is_document_raw = Symset.member Keyword.document_raw_kinds kind;
       val flag = if is_document andalso not is_document_raw then markup_true else "";
     in
       if is_document andalso is_some (Token.get_output tok)
@@ -493,7 +496,11 @@ fun present_thy options keywords thy_name (segments: segment list) =
       Toplevel.setmp_thread_position tr (present_span command_tag span st st');
 
     fun present _ [] = I
-      | present st ((span, (tr, st')) :: rest) = present_command tr span st st' #> present st' rest;
+      | present st ((span, (tr, st')) :: rest) =
+          let
+            val skipped = Toplevel.is_skipped st;
+            val skipped' = Toplevel.is_skipped st';
+          in not (skipped andalso skipped') ? present_command tr span st st' #> present st' rest end;
   in
     if length command_results = length spans then
       (([], []), NONE, true, [], (I, I))

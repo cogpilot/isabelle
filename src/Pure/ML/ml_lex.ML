@@ -8,7 +8,7 @@ signature ML_LEX =
 sig
   val keywords: string list
   datatype token_kind =
-    Keyword | Ident | Long_Ident | Type_Var | Word | Int | Real | Char | String |
+    Keyword | Ident | Long_Ident | Type_Var | Word | Int | Real | Char | String of bool |
     Space | Comment of Comment.kind option | Error of string | EOF
   eqtype token
   val stopper: token Scan.stopper
@@ -23,22 +23,22 @@ sig
   val kind_of: token -> token_kind
   val content_of: token -> string
   val check_content_of: token -> string
+  val check_string: token -> bool
   val flatten: token list -> string
-  val source: (Symbol.symbol, 'a) Source.source ->
-    (token, (Symbol_Pos.T, Position.T * (Symbol.symbol, 'a) Source.source)
-      Source.source) Source.source
-  val tokenize: string -> token list
-  val tokenize_range: Position.range -> string -> token list
-  val tokenize_no_range: string -> token list
-  val read_text: Symbol_Pos.text * Position.T -> token Antiquote.antiquote list
-  val read: Symbol_Pos.text -> token Antiquote.antiquote list
-  val read_range: Position.range -> Symbol_Pos.text -> token Antiquote.antiquote list
+  val read_symbols_sml: Symbol_Pos.T list -> token Antiquote.antiquote list
+  val read_symbols: {check_strings: bool} -> Symbol_Pos.T list -> token Antiquote.antiquote list
+  val read_text: {check_strings: bool} -> Symbol_Pos.text * Position.T ->
+    token Antiquote.antiquote list
+  val read_source_text: Symbol_Pos.text * Position.T -> token Antiquote.antiquote list
   val read_source': {language: bool -> Markup.T, opaque_warning: bool, symbols: bool} ->
     token Antiquote.antiquote Symbol_Pos.scanner -> Input.source -> token Antiquote.antiquote list
   val read_source: Input.source -> token Antiquote.antiquote list
   val read_source_sml: Input.source -> token Antiquote.antiquote list
-  val read_symbols: Symbol_Pos.T list -> token Antiquote.antiquote list
-  val read_symbols_sml: Symbol_Pos.T list -> token Antiquote.antiquote list
+  val read: Symbol_Pos.text -> token Antiquote.antiquote list
+  val read_range: Position.range -> Symbol_Pos.text -> token Antiquote.antiquote list
+  val tokenize: string -> token list
+  val tokenize_range: Position.range -> string -> token list
+  val tokenize_no_range: string -> token list
 end;
 
 structure ML_Lex: ML_LEX =
@@ -71,7 +71,7 @@ val lexicon = Scan.make_lexicon (map raw_explode keywords);
 (* datatype token *)
 
 datatype token_kind =
-  Keyword | Ident | Long_Ident | Type_Var | Word | Int | Real | Char | String |
+  Keyword | Ident | Long_Ident | Type_Var | Word | Int | Real | Char | String of bool |
   Space | Comment of Comment.kind option | Error of string | EOF;
 
 datatype token = Token of Position.range * (token_kind * string);
@@ -138,6 +138,9 @@ fun check_content_of tok =
     Error msg => error msg
   | _ => content_of tok);
 
+fun check_string (Token (_, (String check, _))) = check
+  | check_string _ = false;
+
 
 (* flatten *)
 
@@ -160,7 +163,7 @@ val token_kind_markup =
   | Int => (Markup.ML_numeral, "")
   | Real => (Markup.ML_numeral, "")
   | Char => (Markup.ML_char, "")
-  | String => (Markup.ML_string, "")
+  | String _ => (Markup.ML_string, "")
   | Comment _ => (Markup.ML_comment, "")
   | Error msg => (Markup.bad (), msg)
   | _ => (Markup.empty, "");
@@ -305,9 +308,9 @@ local
 
 fun token k ss = Token (Symbol_Pos.range ss, (k, Symbol_Pos.content ss));
 
-val scan_sml =
+fun scan_token {check_strings} =
   scan_char >> token Char ||
-  scan_string >> token String ||
+  scan_string >> token (String check_strings) ||
   scan_blanks1 >> token Space ||
   Symbol_Pos.scan_comment err_prefix >> token (Comment NONE) ||
   Scan.max token_leq
@@ -319,14 +322,14 @@ val scan_sml =
     scan_ident >> token Ident ||
     scan_type_var >> token Type_Var);
 
-val scan_sml_antiq = scan_sml >> Antiquote.Text;
+val scan_sml_antiq = scan_token {check_strings = false} >> Antiquote.Text;
 
-val scan_ml_antiq =
+fun scan_ml_antiq check_strings =
   Comment.scan_inner >> (fn (kind, ss) => Antiquote.Text (token (Comment (SOME kind)) ss)) ||
   Antiquote.scan_control Antiquote.err_prefix >> Antiquote.Control ||
   Antiquote.scan_antiq >> Antiquote.Antiq ||
   scan_rat_antiq >> Antiquote.Antiq ||
-  scan_sml_antiq;
+  scan_token check_strings >> Antiquote.Text;
 
 fun recover msg =
  (recover_char ||
@@ -362,19 +365,10 @@ fun reader {opaque_warning} scan syms =
 
 in
 
-fun source src =
-  Symbol_Pos.source (Position.line 1) src
-  |> Source.source Symbol_Pos.stopper (Scan.recover (Scan.bulk (!!! "bad input" scan_sml)) recover);
-
-val tokenize = Symbol.explode #> Source.of_list #> source #> Source.exhaust;
-fun tokenize_range range = tokenize #> map (set_range range);
-val tokenize_no_range = tokenize_range Position.no_range;
-
-val read_text = reader {opaque_warning = true} scan_ml_antiq o Symbol_Pos.explode;
-fun read text = read_text (text, Position.none);
-
-fun read_range range =
-  read #> map (fn Antiquote.Text tok => Antiquote.Text (set_range range tok) | antiq => antiq);
+val read_symbols_sml = reader {opaque_warning = false} scan_sml_antiq;
+fun read_symbols check_strings = reader {opaque_warning = true} (scan_ml_antiq check_strings);
+fun read_text check_strings = read_symbols check_strings o Symbol_Pos.explode;
+val read_source_text = read_text {check_strings = true};
 
 fun read_source' {language, symbols, opaque_warning} scan source =
   let
@@ -391,14 +385,29 @@ fun read_source' {language, symbols, opaque_warning} scan source =
 
 val read_source =
   read_source' {language = Markup.language_ML, symbols = true, opaque_warning = true}
-    scan_ml_antiq;
+    (scan_ml_antiq {check_strings = true});
 
 val read_source_sml =
   read_source' {language = Markup.language_SML, symbols = false, opaque_warning = false}
     scan_sml_antiq;
 
-val read_symbols = reader {opaque_warning = true} scan_ml_antiq;
-val read_symbols_sml = reader {opaque_warning = false} scan_sml_antiq;
+
+(* read/tokenize without check_strings *)
+
+fun read text = read_text {check_strings = false} (text, Position.none);
+
+fun read_range range =
+  read #> map (fn Antiquote.Text tok => Antiquote.Text (set_range range tok) | antiq => antiq);
+
+val tokenize =
+  Symbol.explode #> Source.of_list #>
+  Symbol_Pos.source (Position.line 1) #>
+  Source.source Symbol_Pos.stopper
+    (Scan.recover (Scan.bulk (!!! "bad input" (scan_token {check_strings = false}))) recover) #>
+  Source.exhaust;
+
+fun tokenize_range range = tokenize #> map (set_range range);
+val tokenize_no_range = tokenize_range Position.no_range;
 
 end;
 

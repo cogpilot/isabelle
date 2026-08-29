@@ -48,7 +48,7 @@ object Build_History {
         error("Platform " + platform + " unavailable on this machine")
 
       def check_dir(platform: String): Boolean =
-        platform != "" && ml_home(platform).is_dir
+        platform.nonEmpty && ml_home(platform).is_dir
 
       val ml_platform =
         if (Platform.is_windows && arch_64) {
@@ -175,6 +175,9 @@ object Build_History {
     val other_isabelle =
       Other_Isabelle(root, isabelle_identifier = isabelle_identifier, progress = progress)
 
+    def unknown_option(name: String): Boolean =
+      !other_isabelle.bash("bin/isabelle options -g " + Bash.string(name)).ok
+
     def resolve_components(): Unit =
       other_isabelle.resolve_components(
         echo = verbose,
@@ -200,8 +203,11 @@ object Build_History {
         augment_settings(
           other_isabelle, threads, arch_64, arch_apple, heap, max_heap, more_settings)
 
-      File.write(other_isabelle.etc_preferences,
-        cat_lines("build_log_verbose = true" :: more_preferences))
+      val preferences =
+        Options.parse_prefs(cat_lines("build_log_verbose = true" :: more_preferences),
+          unknown = unknown_option).filterNot(_.unknown)
+
+      File.write(other_isabelle.etc_preferences, Options.Change.print_prefs(preferences))
 
       val isabelle_output = other_isabelle.user_output_dir
       val isabelle_output_log = isabelle_output + Path.explode("log")

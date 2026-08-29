@@ -17,27 +17,24 @@ object Isabelle_Process {
     session_background: Sessions.Background,
     session_heaps: List[Path],
     use_prelude: List[String] = Nil,
-    eval_main: String = "",
+    eval_main: String = "Isabelle_Process.init ()",
     modes: List[String] = Nil,
     cwd: Path = Path.current,
     env: JMap[String, String] = Isabelle_System.Settings.env()
   ): Isabelle_Process = {
+    val log = session.resources.log
     val channel = System_Channel()
     val (process_options, process) =
       try {
-        val channel_options =
-          options.
-            string.update("system_channel_address", channel.address).
-            string.update("system_channel_password", channel.password)
-        ML_Process(channel_options, session_background, session_heaps,
+        ML_Process(options, session_background, session_heaps,
           use_prelude = use_prelude, eval_main = eval_main,
           modes = modes, cwd = cwd, env = env)
       }
       catch { case exn @ ERROR(_) => channel.shutdown(); throw exn }
 
     val isabelle_process = new Isabelle_Process(session, process, process_options)
-    process.stdin.close()
-    session.start(receiver => new Prover(receiver, session.cache, channel, process))
+    session.start(receiver =>
+      new Prover(receiver, session.cache, channel, process, process_options, log))
 
     isabelle_process
   }

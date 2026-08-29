@@ -4,10 +4,28 @@ Isabelle NEWS -- history of user-relevant changes
 (Note: Isabelle/jEdit shows a tree-view of the NEWS file in Sidekick.)
 
 
-New in this Isabelle version
-----------------------------
+New in Isabelle2026 (October 2026)
+----------------------------------
 
 *** General ***
+
+* The 'theory' header syntax allows for inlined 'options' that are only
+used for the subsequent theory body --- neither for the theory imports
+nor for other theories importing the current theory. This is analogous
+to session options within a ROOT file, but the scope of options is
+different, and inlined theory options may be edited within a running
+PIDE session.
+
+* The meaning of system option "condition" has been changed as follows.
+If the condition is false, the theory remains formally intact, based on
+the header with imports; the theory body commands are ignored. Likewise,
+document preparation presents only the document commands up to 'theory,
+and ignores everything until the final 'end'. This allows to import
+theories uniformly, but the respective contents may be empty depending
+on conditions. This allows to construct variants of specifications,
+depending on parameters that are changed by external means (e.g.
+environment variables): with suitable naming conventions and proof tool
+setup, later theories may work again uniformly on either variant.
 
 * The Isabelle application bundle has been split into "macos"
 (x86_64-darwin, Intel) and "macos_arm" (arm64-darwin, Apple Silicon).
@@ -39,37 +57,8 @@ class parameter from its origin class in generated code. It is still
 possible to specify code equations for instances of that class
 parameter.
 
-* Code generation: transitional legacy attribute [code del] is
+* Code generation: transitional legacy attribute [code del] has been
 discontinued. Minor INCOMPATIBILITY.
-
-* Config options simp_depth_limit, simp_trace_depth_limit, simp_debug,
-simp_trace now qualified in Isabelle/ML. Minor INCOMPATIBILITY.
-
-* Operations mk_rrules, eq_rrule, cert_simproc, transform_simproc,
-trim_context_simproc, mk_solver, empty_ss, merge_ss, empty_simpset,
-clear_simpset, simpset_map, map_theory_simpset, fold_rule,
-fold_goals_tac, norm_hhf, norm_hhf_protect from structure "Simplifier"
-are now qualified. Minor INCOMPATIBILITY.
-
-* Operation map_ss from structure "Simplifier" renamed to
-Simplifier.map_simpset, following the convention that "ss" refers to a
-"frozen" simpset only. Minor INCOMPATIBILITY.
-
-* Datatype proc_kind from structure "Simplifier" is now qualified. Rare
-INCOMPATIBILITY.
-
-* Discontinued alias "Raw_Simplifier.rewrite"; use
-"Simplifier.rewrite_wrt" instead. Rare INCOMPATIBILITY.
-
-* Discontinued infix "addsimps" and "delsimps"; use explicit
-"Simplifier.add_simp(s)" and "Simplifier.del_simp(s)" instead. Minor
-INCOMPATIBILITY. For existing applications that involve a lot of such
-declarations, consider including the infix declarations from
-Isabelle2025-2 in src/Tools/misc_legacy.ML to ease transition.
-
-* Discontinued infixes "addsimprocs" and "delsimprocs"; use explicit
-"Simplifier.add_proc" and "Simplifier.del_proc" instead. Minor
-INCOMPATIBILITY.
 
 
 *** Isabelle/jEdit Prover IDE ***
@@ -104,11 +93,6 @@ can be reversed via the ESCAPE key. Consequently, the NVDA Screen Reader
 will display the menu title on the Braille display properly ---
 otherwise no action was indicated. Minor INCOMPATIBILITY with native
 Windows GUI behavior of F10, which FlatLaf attempted to imitate here.
-
-* The Java Access Bridge on JDK/x86_64-windows has been patched
-slightly, for more robust detection of text lines via the regular API
-for javax.accessibility.AccessibleExtendedTable.LINE instead of historic
-workarounds.
 
 * The jEdit action "sidekick-tree" is more accessible via shortcut F8.
 
@@ -200,6 +184,8 @@ For example:
       . spass-3.8ds -- include arm64-darwin
       . zipperposition-2.1 -- include arm64-darwin
       . vampire-4.8 -- include arm64-darwin
+  - Tuned output of proof search to use "using" for local facts in
+    conjunction with "metis", "meson", and "smt".
   - Tuned output of proof reconstruction to detect more duplicate
     proofs.
 
@@ -251,14 +237,14 @@ INCOMPATIBILITY.
 * Constants "open" and "uniformity" are not handled as class parameters
 any longer in generated code: there are hardly any instances with a
 reasonable implementation, but a lot of implementations would require
-these as (effectively unused) dictionary parameters.
-Minor INCOMPATIBILITY.
+these as (effectively unused) dictionary parameters. Minor
+INCOMPATIBILITY.
 
 * Constants "Inf", "Sup", "Lcd", "Gcd" are not handled as class
 parameters any longer in generated code but implemented using their
 counterparts on finite sets. Minor INCOMPATIBILITY.
 
-* Set difference is now written using the symbol "\<setminus>" (which is not a
+* Set difference may now be written using the symbol "\<setminus>" (which is not a
 backlash), although the former symbol "-" still works. Minor
 INCOMPATIBILITY.
 
@@ -272,18 +258,37 @@ generalised to Euclidean spaces. Stronger versions of the FTC, now for
 countable rather than finite sets. Minor INCOMPATIBILITY
 
 * Session "HOL-Analysis": Theory "Determinant_Linear_Function" provides
-"finite_dimensional_vector_space.det", i.e. the notion of the determinant of 
-a linear function from a finite-dimensional vector space into itself, 
-generalising (but not replacing) the earlier "Determinants.det", which operates
-on matrices. The related "abs_det" gives the absolute value of the determinant
-of a multiset of vectors.
-
-The interpretation for Euclidean spaces, `eucl.det`, is now the
-default meaning of "det", and the previous "Determinants.det" is available with
+"finite_dimensional_vector_space.det", i.e. the notion of the
+determinant of a linear function from a finite-dimensional vector space
+into itself, generalising (but not replacing) the earlier
+"Determinants.det", which operates on matrices. The related "abs_det"
+gives the absolute value of the determinant of a multiset of vectors.
+The interpretation for Euclidean spaces, "eucl.det", is now the default
+meaning of "det", and the previous "Determinants.det" is available with
 the abbreviation "matrix_det". INCOMPATIBILITY
 
+* Session "HOL-Analysis": Theory "Infinite_Product" treats products
+indexed by arbitrary sets, generalising the existing treatment of
+the product of a sequence.
 
 *** ML ***
+
+* ML antiquotation @{unchecked_name a} inlines a syntactically
+wellformed long name as string literal, without any formal checking in
+the logical context. This may be used as last resort, when Isabelle/ML
+sources need to make forward-references to term consts or type
+constructors that are introduced later on.
+
+* ML string literals that look like a formal entity (qualified name) are
+highlighted as "legacy feature", with an offer to replace it via
+suitable ML antiquotations: @{const_name}, @{type_name},
+@{unchecked_name}. It is also possible to use @{verbatim} for strings
+that are not intended as a name of any kind. The check may be disabled
+locally like this:
+
+  context notes [[ML_check_strings = false]]
+  begin
+  end
 
 * Both SHA1 and SHA256 are supported via Isabelle/Scala, with minor
 changes of the supported operations: Minor INCOMPATIBILITY. SHA1.fake
@@ -300,9 +305,11 @@ access files from Isar commands, without updating the theory context.
 * Options.update_default allows to update the thread-local default for
 system options, without affecting the underlying ML process default.
 
-* Obsolete Thy_Info.use_thy_legacy has been removed. Rare
-INCOMPATIBILITY: need to use formal PIDE session to load theories, e.g.
-via "isabelle build" or "isabelle process_theories".
+* Structure Thy_Info has been dismantled: most of its operations moved
+to structure Thy_Presentation and structure Build. Some historic
+operations habe been removed, notable Thy_Info.use_thy_legacy. Rare
+INCOMPATIBILITY: theories need to be loaded into a formal PIDE session,
+e.g. via "isabelle build" or "isabelle process_theories".
 
 * More operations for structure Time, notably Time.seconds and
 Time.sleep.
@@ -311,8 +318,43 @@ Time.sleep.
 Isabelle/ML user-space. Minor INCOMPATIBILITY: use regular Isabelle/ML
 operations, notably Time.sleep instead of OS.Process.sleep.
 
+* Config options simp_depth_limit, simp_trace_depth_limit, simp_debug,
+simp_trace now qualified in Isabelle/ML. Minor INCOMPATIBILITY.
+
+* Operations mk_rrules, eq_rrule, cert_simproc, transform_simproc,
+trim_context_simproc, mk_solver, empty_ss, merge_ss, empty_simpset,
+clear_simpset, simpset_map, map_theory_simpset, fold_rule,
+fold_goals_tac, norm_hhf, norm_hhf_protect from structure "Simplifier"
+are now qualified. Minor INCOMPATIBILITY.
+
+* Operation map_ss from structure "Simplifier" renamed to
+Simplifier.map_simpset, following the convention that "ss" refers to a
+"frozen" simpset only. Minor INCOMPATIBILITY.
+
+* Datatype proc_kind from structure "Simplifier" is now qualified. Rare
+INCOMPATIBILITY.
+
+* Discontinued alias "Raw_Simplifier.rewrite"; use
+"Simplifier.rewrite_wrt" instead. Rare INCOMPATIBILITY.
+
+* Discontinued infix "addsimps" and "delsimps"; use explicit
+"Simplifier.add_simp(s)" and "Simplifier.del_simp(s)" instead. Minor
+INCOMPATIBILITY. For existing applications that involve a lot of such
+declarations, consider including the infix declarations from
+Isabelle2025-2 in src/Tools/misc_legacy.ML to ease transition.
+
+* Discontinued infixes "addsimprocs" and "delsimprocs"; use explicit
+"Simplifier.add_proc" and "Simplifier.del_proc" instead. Minor
+INCOMPATIBILITY.
+
 
 *** System ***
+
+* System option "system_log" is enabled by default, so output from
+Output.system_message etc. appears on the PIDE session log: for
+command-line tools like "isabelle dump", "isabelle build", and
+derivatives, this is the console. Potential INCOMPATIBILITY: e.g. use
+"isabelle build -o system_log='' ..." to disable it explicitly.
 
 * Poly/ML 5.9.2 has been patched to support larger heap size in the
 special x86_64_32/arm64_32 mode with 32-bit values: the limit is now 32
@@ -386,6 +428,21 @@ does not change interrupt handling at all. Subtle INCOMPATIBILITY in
 very rare situations.
 
 * Update to OpenJDK 25: the current long-term support version of Java.
+
+* The Java Access Bridge on JDK/x86_64-windows has been patched
+slightly, for more robust detection of text lines via the regular API
+for javax.accessibility.AccessibleExtendedTable.LINE instead of historic
+workarounds.
+
+* Integration of Scala.js, to allow running Isabelle/Scala sources
+within JavaScript engines. This imposes additional side-conditions on
+relevant modules: All reachable methods must be linked to JavaScript,
+which is not possible for many Java libraries (e.g., java.io) or JNI
+calls.
+
+* Directory src/Tools/Scalajs_Demo provides a demonstration on how to
+compile an Isabelle/Scala component via Scala.js and run it on an
+Isabelle JavaScript environment.
 
 
 

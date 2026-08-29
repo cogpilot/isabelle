@@ -163,11 +163,10 @@ object Dump {
         else List(new Session(context, session_logic, log, selected_sessions, record_proofs))
       }
 
-      val PURE = isabelle.Thy_Header.PURE
-
+      val is_Pure = Sessions.is_Pure(logic)
       val base =
-        if ((logic == PURE && !pure_base) || skip_base) Nil
-        else make_session(base_sessions, session_logic = PURE, strict = logic == PURE)
+        if ((is_Pure && !pure_base) || skip_base) Nil
+        else make_session(base_sessions, session_logic = Sessions.Pure, strict = is_Pure)
 
       val main =
         make_session(
@@ -175,7 +174,7 @@ object Dump {
             base_sessions.contains(name) ||
             proof_sessions.contains(name)))
 
-      val proofs = make_session(proof_sessions, session_logic = PURE, record_proofs = true)
+      val proofs = make_session(proof_sessions, session_logic = Sessions.Pure, record_proofs = true)
 
       proofs ::: base ::: main
     }
@@ -224,19 +223,19 @@ object Dump {
         session_dirs = context.session_dirs,
         include_sessions = deps.sessions_structure.imports_topological_order)
 
-    val used_theories: List[Document.Node.Name] = {
+    val used_theories: List[Resources.Thy] = {
       for {
         session_name <-
           deps.sessions_structure.build_graph.restrict(selected_sessions.toSet).topological_order
-        (name, theory_opts) <- deps(session_name).used_theories
-        if !resources.loaded_theory(name)
+        entry <- deps(session_name).used_theories
+        if !resources.loaded_theory(entry.name)
         if {
           def warn(msg: String): Unit =
-            progress.echo_warning("Skipping theory " + name + "  (" + msg + ")")
+            progress.echo_warning("Skipping theory " + entry.name + "  (" + msg + ")")
 
-          val theory_options = options ++ theory_opts
+          val theory_options = options ++ entry.options
 
-          val bad_conditions = Sessions.Conditions(theory_options).bad
+          val bad_conditions = Sessions.Conditions.eval(List(theory_options)).bad
           if (bad_conditions.nonEmpty) {
             warn("undefined " + bad_conditions.mkString(", "))
             false
@@ -247,7 +246,7 @@ object Dump {
           }
           else true
         }
-      } yield name
+      } yield entry
     }
 
 
@@ -314,7 +313,7 @@ object Dump {
 
       try {
         val use_theories_result =
-          session.use_theories(used_theories.map(_.theory),
+          session.use_theories(used_theories.map(_.name.theory),
             unicode_symbols = unicode_symbols,
             progress = progress,
             commit = Some(Consumer.apply))
@@ -343,7 +342,7 @@ object Dump {
   /* dump */
 
   val default_output_dir: Path = Path.explode("dump")
-  val default_logic: String = Thy_Header.PURE
+  val default_logic: String = Sessions.Pure
 
   def dump(
     options: Options,

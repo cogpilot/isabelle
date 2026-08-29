@@ -260,7 +260,8 @@ object Document_Model {
             val pending_nodes = for (case (node_name, None) <- purged) yield node_name
             (open_nodes ::: touched_nodes ::: pending_nodes).map((_, Position.none))
           }
-          val retain = PIDE.resources.dependencies(imports).theories.toSet
+          val session_options = PIDE.session.session_options
+          val retain = PIDE.resources.dependencies(session_options, imports).theories.toSet
 
           for (case (node_name, Some(edits)) <- purged if !retain(node_name); edit <- edits)
             yield edit
@@ -425,7 +426,8 @@ case class File_Model(
 
   def node_header: Document.Node.Header =
     PIDE.resources.special_header(node_name) getOrElse
-      PIDE.resources.check_thy(node_name, Scan.char_reader(content.text), strict = false)
+      PIDE.resources.check_thy(
+        session.session_options, node_name, Scan.char_reader(content.text), strict = false)
 
 
   /* content */
@@ -473,7 +475,7 @@ case class File_Model(
           (node_required || !Document.Node.Perspective_Text.is_empty(last_perspective))) None
     else {
       val text_edits = List(Text.Edit.remove(0, content.text))
-      Some(node_edits(Document.Node.no_header, text_edits, Document.Node.Perspective_Text.empty))
+      Some(node_edits(Document.Node.Header.none, text_edits, Document.Node.Perspective_Text.empty))
     }
 
   def is_stable: Boolean = pending_edits.isEmpty
@@ -511,7 +513,8 @@ class Buffer_Model private(
 
     PIDE.resources.special_header(node_name) getOrElse
       JEdit_Lib.buffer_lock(buffer) {
-        PIDE.resources.check_thy(node_name, JEdit_Lib.buffer_reader(buffer), strict = false)
+        PIDE.resources.check_thy(
+          session.session_options, node_name, JEdit_Lib.buffer_reader(buffer), strict = false)
       }
   }
 

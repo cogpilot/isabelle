@@ -7,12 +7,13 @@ Resources for theories and auxiliary files.
 signature RESOURCES =
 sig
   val default_qualifier: string
+  type scala_fun = {single: bool, bytes: bool, pos: Position.T}
   val init_session:
     {session_positions: (string * Properties.T) list,
      session_directories: (string * string) list,
      command_timings: Properties.T list,
      load_commands: (string * Position.T) list,
-     scala_functions: (string * ((bool * bool) * Position.T)) list,
+     scala_functions: (string * scala_fun) list,
      global_theories: (string * string) list,
      loaded_theories: string list} -> unit
   val init_session_yxml: Bytes.T -> unit
@@ -23,11 +24,21 @@ sig
   val check_session: Proof.context -> string * Position.T -> string
   val last_timing: Toplevel.transition -> Time.time
   val check_load_command: Proof.context -> string * Position.T -> string
-  val check_scala_function: Proof.context -> string * Position.T -> string * (bool * bool)
+  val check_scala_function: Proof.context -> string * Position.T -> string * scala_fun
   val master_directory: theory -> Path.T
   val imports_of: theory -> (string * Position.T) list
-  val begin_theory: Path.T -> Thy_Header.header -> theory list -> theory
-  val thy_path: Path.T -> Path.T
+  type node_name = {node: string, master_dir: Path.T, theory: string}
+  type thy =
+   {name: node_name,
+    pos: Position.T,
+    imports: (string * Position.T) list,
+    options: Options.update_pos,
+    keywords: Thy_Header.keywords,
+    initiators: string list}
+  val make_thy:
+    {node: string, master_dir: Path.T, header: Thy_Header.header, initiators: string list} -> thy
+  val map_thy_pos: (Position.T -> Position.T) -> thy -> thy
+  val begin_theory: thy -> theory list -> theory
   val theory_qualifier: string -> string
   val find_theory_file: string -> Path.T option
   val import_name: string -> Path.T -> string ->
@@ -89,6 +100,8 @@ fun get_timings timings tr =
 
 (* session base *)
 
+type scala_fun = {single: bool, bytes: bool, pos: Position.T};
+
 val default_qualifier = "Draft";
 
 type entry = {pos: Position.T, serial: serial};
@@ -101,7 +114,7 @@ val empty_session_base =
     session_directories = Symtab.empty: Path.T list Symtab.table,
     timings = empty_timings,
     load_commands = []: (string * Position.T) list,
-    scala_functions = Symtab.empty: ((bool * bool) * Position.T) Symtab.table},
+    scala_functions = Symtab.empty: scala_fun Symtab.table},
    {global_theories = Symtab.empty: string Symtab.table,
     loaded_theories = Symset.empty: Symset.T});
 
@@ -128,12 +141,17 @@ fun init_session_yxml yxml =
     val (session_positions, (session_directories, (command_timings,
         (load_commands, (scala_functions, (global_theories, loaded_theories)))))) =
       YXML.parse_body_bytes yxml |>
-        let open XML.Decode in
+        let
+          open XML.Decode;
+          val scala_fun =
+            triple bool bool properties #>
+            (fn (a, b, p) => {single = a, bytes = b, pos = Position.of_properties p});
+        in
           (pair (list (pair string properties))
             (pair (list (pair string string))
               (pair (list properties)
                 (pair (list (pair string properties))
-                  (pair (list (pair string (pair (pair bool bool) properties)))
+                  (pair (list (pair string scala_fun))
                     (pair (list (pair string string)) (list string)))))))
         end;
   in
@@ -142,7 +160,7 @@ fun init_session_yxml yxml =
        session_directories = session_directories,
        command_timings = command_timings,
        load_commands = (map o apsnd) Position.of_properties load_commands,
-       scala_functions = (map o apsnd o apsnd) Position.of_properties scala_functions,
+       scala_functions = scala_functions,
        global_theories = global_theories,
        loaded_theories = loaded_theories}
   end;
@@ -184,10 +202,9 @@ fun check_load_command ctxt arg =
 fun check_scala_function ctxt arg =
   let
     val table = get_session_base1 #scala_functions;
-    val funs = Symtab.fold (fn (a, (_, pos)) => cons (a, pos)) table [] |> sort_by #1;
+    val funs = Symtab.fold (fn (a, {pos, ...}) => cons (a, pos)) table [] |> sort_by #1;
     val name = Completion.check_entity Markup.scala_functionN funs ctxt arg;
-    val flags = #1 (the (Symtab.lookup table name));
-  in (name, flags) end;
+  in (name, the (Symtab.lookup table name)) end;
 
 val _ = Theory.setup
  (Document_Output.antiquotation_verbatim_embedded \<^binding>\<open>scala_function\<close>
@@ -198,14 +215,14 @@ val _ = Theory.setup
   ML_Antiquotation.value_embedded \<^binding>\<open>scala\<close>
     (Args.context -- Scan.lift Parse.embedded_position >> (fn (ctxt, arg) =>
       let
-        val (name, (single, bytes)) = check_scala_function ctxt arg;
+        val (name, {single, bytes, ...}) = check_scala_function ctxt arg;
         val func =
           (if single then "Scala.function1" else "Scala.function") ^
           (if bytes then "_bytes" else "");
       in ML_Syntax.atomic (func ^ " " ^ ML_Syntax.print_string name) end)));
 
 
-(* theory resources *)
+(* theory resources and entries *)
 
 type data =
  {master_dir: Path.T,  (*master directory of theory source*)
@@ -224,11 +241,40 @@ structure Data = Theory_Data
 val master_directory = #master_dir o Data.get;
 val imports_of = #imports o Data.get;
 
-fun begin_theory master_dir ({name, imports, keywords, ...}: Thy_Header.header) parents =
+type node_name = {node: string, master_dir: Path.T, theory: string};
+
+type thy =
+ {name: node_name,
+  pos: Position.T,
+  imports: (string * Position.T) list,
+  options: Options.update_pos,
+  keywords: Thy_Header.keywords,
+  initiators: string list};
+
+fun make_thy {node, master_dir, header: Thy_Header.header, initiators} : thy =
   let
+    val (theory, pos) = #name header;
+    val name = {node = node, master_dir = master_dir, theory = theory};
+  in
+   {name = name,
+    pos = pos,
+    imports = #imports header,
+    options = #options header,
+    keywords = #keywords header,
+    initiators = initiators}
+  end;
+
+fun map_thy_pos f ({name, pos, imports, options, keywords, initiators}: thy) : thy =
+ {name = name, pos = f pos, imports = map (apsnd f) imports,
+  options = map (fn (a, b) => (apsnd f a, Option.map (apsnd f) b)) options,
+  keywords = keywords, initiators = initiators};
+
+fun begin_theory ({name, pos, imports, keywords, ...}: thy) parents =
+  let
+    val master_dir = Path.explode (File.symbolic_path (#master_dir name));
     val thy =
-      Theory.begin_theory name parents
-      |> Data.put {master_dir = Path.explode (File.symbolic_path master_dir), imports = imports}
+      Theory.begin_theory (#theory name, pos) parents
+      |> Data.put {master_dir = master_dir, imports = imports}
       |> Thy_Header.add_keywords keywords;
     val ctxt = Proof_Context.init_global thy;
     val _ = List.app (ignore o check_load_command ctxt o #load_command o #2) keywords;
@@ -236,8 +282,6 @@ fun begin_theory master_dir ({name, imports, keywords, ...}: Thy_Header.header) 
 
 
 (* theory files *)
-
-val thy_path = Path.ext "thy";
 
 fun theory_qualifier theory =
   (case global_theory theory of
@@ -253,7 +297,7 @@ fun theory_name qualifier theory =
 
 fun find_theory_file thy_name =
   let
-    val thy_file = thy_path (Path.basic (Long_Name.base_name thy_name));
+    val thy_file = Path.thy (Path.basic (Long_Name.base_name thy_name));
     val session = theory_qualifier thy_name;
     val dirs = Symtab.lookup_list (get_session_base1 #session_directories) session;
   in
@@ -285,7 +329,7 @@ fun import_name qualifier dir s =
       | NONE =>
           if Thy_Header.is_base_name s andalso Long_Name.is_qualified s
           then loaded_theory_node theory
-          else theory_node (File.full_path dir (thy_path (Path.expand (Path.explode s)))))
+          else theory_node (File.full_path dir (Path.thy (Path.expand (Path.explode s)))))
   end;
 
 fun check_file dir file = File.check_file (File.full_path dir file);
@@ -296,7 +340,7 @@ fun check_thy dir thy_name =
     val thy_path =
       (case find_theory_file thy_name of
         SOME path => check_file Path.current path
-      | NONE => check_file dir (thy_path (Path.basic thy_base_name)));
+      | NONE => check_file dir (Path.thy (Path.basic thy_base_name)));
     val text = File.read thy_path;
 
     val {name = (name, pos), imports, options, keywords} =

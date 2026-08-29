@@ -92,7 +92,6 @@ keywords
     "prop" "term" "typ" "print_codesetup" "print_context_tracing" "unused_thms" :: diag
   and "print_state" :: diag
   and "welcome" :: diag
-  and "end" :: thy_end
   and "realizers" :: thy_decl
   and "realizability" :: thy_decl
   and "extract_type" "extract" :: thy_decl
@@ -690,12 +689,6 @@ val _ =
       Scan.optional Parse_Spec.includes [] -- Scan.repeat Parse_Spec.context_element
         >> (fn (incls, elems) => Toplevel.begin_nested_target (Target_Context.context_begin_nested_cmd incls elems)))
       --| Parse.begin);
-
-val _ =
-  Outer_Syntax.command \<^command_keyword>\<open>end\<close> "end context"
-    (Scan.succeed
-      (Toplevel.exit o Toplevel.end_main_target o Toplevel.end_nested_target o
-        Toplevel.end_proof Proof.end_notepad));
 
 in end\<close>
 
@@ -1335,7 +1328,7 @@ val _ =
           else
             let
               val ctxt = Toplevel.context_of st;
-              val insert = Symset.insert o Context.theory_long_name o Thy_Info.check_theory ctxt;
+              val insert = Symset.insert o Context.theory_long_name o Build.check_theory ctxt;
               val names = Symset.build (fold insert raw_names);
             in Symset.member names o Context.theory_long_name o Context.theory_of end;
       in Session.print_context_tracing pred end)));
@@ -1637,9 +1630,15 @@ struct
 end;
 
 structure Posix = struct end;
+
+structure PolyML =
+struct
+  open PolyML;
+  fun exit (_: int) = raise Fail "Cannot exit process from Isabelle/ML"
+end;
 \<close>
 
-declare [[ML_write_global = false]]
+declare [[ML_write_global = false, ML_check_strings = true]]
 
 ML_command \<open>\<^assert> (not (can ML_command \<open>() handle _ => ()\<close>))\<close>
 ML_command \<open>\<^assert> (not (can ML_command \<open>() handle Interrupt => ()\<close>))\<close>

@@ -33,6 +33,7 @@ object Thy_Header {
   val ABBREVS = "abbrevs"
   val AND = "and"
   val BEGIN = "begin"
+  val END = "end"
 
   val bootstrap_syntax: Outer_Syntax =
     Outer_Syntax.empty.add_keywords(
@@ -61,6 +62,7 @@ object Thy_Header {
         (TXT, Keyword.Spec(kind = Keyword.DOCUMENT_BODY)),
         (TEXT_RAW, Keyword.Spec(kind = Keyword.DOCUMENT_RAW)),
         (THEORY, Keyword.Spec(kind = Keyword.THY_BEGIN, tags = List("theory"))),
+        (END, Keyword.Spec(kind = Keyword.THY_END)),
         ("ML", Keyword.Spec(kind = Keyword.THY_DECL, tags = List("ML")))))
 
   def bootstrap_keywords: Keyword.Keywords = bootstrap_syntax.keywords
@@ -68,13 +70,12 @@ object Thy_Header {
 
   /* file name vs. theory name */
 
-  val PURE = "Pure"
   val ML_BOOTSTRAP = "ML_Bootstrap"
-  val ml_roots = List("ROOT0.ML" -> "ML_Root0", "ROOT.ML" -> "ML_Root")
-  val bootstrap_thys = List(PURE, ML_BOOTSTRAP).map(a => a -> ("Bootstrap_" + a))
+  val ml_roots: List[(String, String)] = List("ROOT0.ML" -> "ML_Root0", "ROOT.ML" -> "ML_Root")
+  private val bootstrap_thys = List(Sessions.Pure, ML_BOOTSTRAP).map(a => a -> ("Bootstrap_" + a))
 
-  val bootstrap_global_theories =
-    (Sessions.root_name :: (ml_roots ::: bootstrap_thys).map(_._2)).map(_ -> PURE)
+  val bootstrap_global_theories: List[(String, String)] =
+    (Sessions.root_name :: (ml_roots ::: bootstrap_thys).map(_._2)).map(_ -> Sessions.Pure)
 
   def import_name(s: String): String =
     Url.get_base_name(s) match {

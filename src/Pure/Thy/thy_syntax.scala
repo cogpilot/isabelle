@@ -82,11 +82,7 @@ object Thy_Syntax {
           node.header.errors.nonEmpty || header.errors.nonEmpty || node.header != header
         if (update_header) {
           val node1 = node.update_header(header)
-          if (node.header.imports_no_pos != node1.header.imports_no_pos ||
-              node.header.options != node1.header.options ||
-              node.header.keywords != node1.header.keywords ||
-              node.header.abbrevs != node1.header.abbrevs ||
-              node.header.errors != node1.header.errors) syntax_changed0 += name
+          if (!(node.header eq_no_pos node1.header)) syntax_changed0 += name
           nodes += (name -> node1)
           doc_edits += (name -> Document.Node.Deps(header))
         }
@@ -106,7 +102,7 @@ object Thy_Syntax {
               Outer_Syntax.merge(header.imports_no_pos.map(resources.session_base.node_syntax(nodes, _)))
             }
             else resources.session_base.overall_syntax
-          Some(imports_syntax + header)
+          Some(imports_syntax.add_keywords(header.keywords).add_abbrevs(header.abbrevs))
         }
       nodes += (name -> node.update_syntax(syntax))
     }
@@ -200,7 +196,7 @@ object Thy_Syntax {
         node.update_commands(node_commands)
 
       case Exn.Exn(exn) =>
-        session.system_output(Output.error_message_text(Exn.print(exn)))
+        session.resources.log.error_message(Exn.print(exn))
         node
     }
   }
@@ -220,7 +216,7 @@ object Thy_Syntax {
   }
 
   private def reparse_spans(
-    resources: Resources,
+    session: Session,
     syntax: Outer_Syntax,
     get_blob: Document.Node.Name => Option[Document.Blobs.Item],
     can_import: Document.Node.Name => Boolean,
@@ -229,12 +225,12 @@ object Thy_Syntax {
     first: Command,
     last: Command
   ): Linear_Set[Command] = {
-    require(!resources.loaded_theory(node_name))
+    require(!session.resources.loaded_theory(node_name))
 
     val cmds0 = commands.iterator(first, last).toList
     val blobs_spans0 =
       syntax.parse_spans(cmds0.iterator.map(_.source).mkString).map(span =>
-        (Command.blobs_info(resources, syntax, get_blob, can_import, node_name, span), span))
+        (Command.blobs_info(session, syntax, get_blob, can_import, node_name, span), span))
 
     val (cmds1, blobs_spans1) = chop_common(cmds0, blobs_spans0)
 
@@ -270,7 +266,7 @@ object Thy_Syntax {
   }
 
   private def text_edit(
-    resources: Resources,
+    session: Session,
     syntax: Outer_Syntax,
     get_blob: Document.Node.Name => Option[Document.Blobs.Item],
     can_import: Document.Node.Name => Boolean,
@@ -278,6 +274,8 @@ object Thy_Syntax {
     node: Document.Node,
     edit: Document.Edit_Text
   ): Document.Node = {
+    val resources = session.resources
+
     /* recover command spans after edits */
     // FIXME somewhat slow
     def recover_spans(
@@ -297,7 +295,7 @@ object Thy_Syntax {
             val first = next_invisible(cmds.reverse, first_unparsed)
             val last = next_invisible(cmds, first_unparsed)
             recover(
-              reparse_spans(resources, syntax, get_blob, can_import, name, cmds, first, last))
+              reparse_spans(session, syntax, get_blob, can_import, name, cmds, first, last))
           case None => cmds
         }
       recover(commands)
@@ -343,7 +341,7 @@ object Thy_Syntax {
                         last = it.next()
                         i += last.length
                       }
-                      reparse_spans(resources, syntax, get_blob, can_import,
+                      reparse_spans(session, syntax, get_blob, can_import,
                         name, commands, first_unfinished, last)
                     case None => commands
                   }
@@ -400,19 +398,19 @@ object Thy_Syntax {
             val node1 =
               if (!resources.loaded_theory(name) && reparse_set(name) && commands.nonEmpty) {
                 node.update_commands(
-                  reparse_spans(resources, syntax, get_blob, can_import, name,
+                  reparse_spans(session, syntax, get_blob, can_import, name,
                   commands, commands.head, commands.last))
               }
               else node
             val node2 =
               edits.foldLeft(node1)(
-                text_edit(resources, syntax, get_blob, can_import, reparse_limit, _, _))
+                text_edit(session, syntax, get_blob, can_import, reparse_limit, _, _))
             val node3 =
               if (resources.loaded_theory(name)) {
                 reload_theory(session, doc_blobs, name, node2)
               }
               else if (reparse_set(name)) {
-                text_edit(resources, syntax, get_blob, can_import, reparse_limit,
+                text_edit(session, syntax, get_blob, can_import, reparse_limit,
                   node2, (name, node2.edit_perspective))
               }
               else node2

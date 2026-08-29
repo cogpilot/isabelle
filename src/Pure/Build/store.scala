@@ -120,7 +120,7 @@ object Store {
             else shasum1 == shasum2
 
           def trim(shasum: Shasum): Shasum =
-            if (build_thorough) shasum else shasum.filter(s => !Sessions.detect_build_prefs(s))
+            if (build_thorough) shasum else shasum.filter(s => !Sessions.Build_Prefs.detect(s))
 
           !fresh_build &&
             build.ok &&
@@ -458,7 +458,10 @@ class Store private(
   /* heap shasum */
 
   def make_shasum(ancestors: List[Shasum]): Shasum =
-    if (ancestors.isEmpty) Shasum.make_meta_info(SHA1.digest(ml_settings.polyml_uuid))
+    if (ancestors.isEmpty) {
+      Shasum.make_meta_info(
+        SHA1.digest(File.read(ml_settings.polyml_uuid) + ML_Process.pure_prelude))
+    }
     else Shasum.flat(ancestors)
 
   def heap_shasum(database_server: Option[SQL.Database], name: String): Shasum = {

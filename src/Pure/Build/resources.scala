@@ -14,6 +14,38 @@ import java.io.{File => JFile}
 
 
 object Resources {
+  object Thy {
+    def make(
+      thy: (Document.Node.Name, Position.T),
+      header: Document.Node.Header,
+      options: Options.Update = Nil,
+      initiators: List[Document.Node.Name] = Nil
+    ): Thy = {
+      Thy(name = thy._1, pos = thy._2,
+        imports = header.imports_no_pos,
+        options = header.options ::: options,
+        keywords = header.keywords,
+        abbrevs = header.abbrevs,
+        condition_bad = header.condition_bad,
+        errors = header.errors,
+        initiators = initiators)
+    }
+  }
+
+  sealed case class Thy(
+    name: Document.Node.Name = Document.Node.Name.empty,
+    pos: Position.T = Position.none,
+    imports: List[Document.Node.Name] = Nil,
+    options: Options.Update = Nil,
+    keywords: Thy_Header.Keywords = Nil,
+    abbrevs: Thy_Header.Abbrevs = Nil,
+    condition_bad: String = "",
+    errors: List[String] = Nil,
+    initiators: List[Document.Node.Name] = Nil
+  ) {
+    override def toString: String = name.toString
+  }
+
   def bootstrap: Resources =
     new Resources(Sessions.Background(base = Sessions.Base.bootstrap), Logger.none)
 
@@ -51,13 +83,13 @@ class Resources(
     pair(list(pair(string, string)),
     pair(list(properties),
     pair(list(pair(string, properties)),
-    pair(list(Scala.encode_fun),
+    pair(list(pair(string, triple(bool, bool, properties))),
     pair(list(pair(string, string)), list(string)))))))(
      (sessions_structure.session_positions,
      (sessions_structure.dest_session_directories,
      (command_timings,
      (Command_Span.load_commands.map(cmd => (cmd.name, cmd.position)),
-     (Scala.functions,
+     (Scala.functions.map((fun: Scala.Fun) => (fun.name, (fun.single, fun.bytes, fun.position))),
      (sessions_structure.global_theories.toList,
       session_base.loaded_theories.keys)))))))
   }
@@ -207,6 +239,7 @@ class Resources(
   }
 
   def check_thy(
+    session_options: Options,
     node_name: Document.Node.Name,
     reader: Reader[Char],
     command: Boolean = true,
@@ -223,15 +256,20 @@ class Resources(
             }
             else (name, pos)
           })
+
+        val conditions_options = Sessions.Conditions.make_options(session_options, header.options)
+        val conditions = Sessions.Conditions.eval(List(conditions_options))
+
         Document.Node.Header(
           imports = imports,
           options = header.options,
           keywords = header.keywords,
-          abbrevs = header.abbrevs)
+          abbrevs = header.abbrevs,
+          condition_bad = conditions.bad_message)
       }
-      catch { case exn: Throwable => Document.Node.bad_header(Exn.message(exn)) }
+      catch { case e: Throwable => Document.Node.Header.exn(e) }
     }
-    else Document.Node.no_header
+    else Document.Node.Header.none
   }
 
 
@@ -241,7 +279,7 @@ class Resources(
     val imports =
       if (name.theory == Sessions.root_name) List(import_name(name, Sessions.theory_import))
       else if (Thy_Header.is_ml_root(name.theory)) List(import_name(name, Thy_Header.ML_BOOTSTRAP))
-      else if (Thy_Header.is_bootstrap(name.theory)) List(import_name(name, Thy_Header.PURE))
+      else if (Thy_Header.is_bootstrap(name.theory)) List(import_name(name, Sessions.Pure))
       else Nil
     if (imports.isEmpty) None
     else Some(Document.Node.Header(imports = imports.map((_, Position.none))))
@@ -262,24 +300,26 @@ class Resources(
   /* theory and file dependencies */
 
   def dependencies(
+      session_options: Options,
       thys: List[(Document.Node.Name, Position.T)],
-      progress: Progress = new Progress): Dependencies[Unit] =
-    Dependencies.empty[Unit].require_thys((), thys, progress = progress)
+      options: Options.Update = Nil,
+      progress: Progress = new Progress): Dependencies =
+    Dependencies.empty.require_thys(session_options, thys, options = options, progress = progress)
 
   def session_dependencies(
     info: Sessions.Info,
     progress: Progress = new Progress
-  ) : Dependencies[Options.Update] = {
-    info.theories.foldLeft(Dependencies.empty[Options.Update]) {
+  ) : Dependencies = {
+    info.theories.foldLeft(Dependencies.empty) {
       case (dependencies, (options, thys)) =>
-        dependencies.require_thys(options,
+        dependencies.require_thys(info.options,
           for { (thy, pos) <- thys } yield (import_name(info, thy), pos),
-          progress = progress)
+          options = options, progress = progress)
     }
   }
 
   object Dependencies {
-    def empty[A]: Dependencies[A] = new Dependencies[A](Nil, Map.empty)
+    val empty: Dependencies = new Dependencies(Nil, Set.empty)
 
     private def show_path(names: List[Document.Node.Name]): String =
       names.map(name => quote(name.theory)).mkString(" via ")
@@ -291,27 +331,29 @@ class Resources(
       if_proper(initiators, "\n(required by " + show_path(initiators.reverse) + ")")
   }
 
-  final class Dependencies[A] private(
-    rev_entries: List[Document.Node.Entry],
-    seen: Map[Document.Node.Name, A]
+  final class Dependencies private(
+    rev_entries: List[Resources.Thy],
+    seen: Set[Document.Node.Name]
   ) {
-    private def cons(entry: Document.Node.Entry): Dependencies[A] =
-      new Dependencies[A](entry :: rev_entries, seen)
+    private def cons(entry: Resources.Thy): Dependencies =
+      new Dependencies(entry :: rev_entries, seen)
 
-    def require_thy(adjunct: A,
+    def require_thy(
+      session_options: Options,
       thy: (Document.Node.Name, Position.T),
+      options: Options.Update = Nil,
       initiators: List[Document.Node.Name] = Nil,
       progress: Progress = new Progress
-    ): Dependencies[A] = {
+    ): Dependencies = {
       val (name, pos) = thy
 
       def message: String =
         "The error(s) above occurred for theory " + quote(name.theory) +
           Dependencies.required_by(initiators) + Position.here(pos)
 
-      if (seen.isDefinedAt(name)) this
+      if (seen(name)) this
       else {
-        val dependencies1 = new Dependencies[A](rev_entries, seen + (name -> adjunct))
+        val dependencies1 = new Dependencies(rev_entries, seen + name)
         if (loaded_theory(name)) dependencies1
         else {
           try {
@@ -320,37 +362,42 @@ class Resources(
             progress.expose_interrupt()
             val header =
               try {
-                with_thy_reader(name, check_thy(name, _, command = false)).cat_errors(message)
+                with_thy_reader(name,
+                  check_thy(session_options, name, _, command = false)).cat_errors(message)
               }
               catch { case ERROR(msg) => cat_error(msg, message) }
-            val entry = Document.Node.Entry(name, header)
-            dependencies1.require_thys(adjunct, header.imports,
+            val entry = Resources.Thy.make(thy, header, options = options, initiators = initiators)
+            dependencies1.require_thys(session_options, header.imports, options = options,
               initiators = name :: initiators, progress = progress).cons(entry)
           }
           catch {
             case e: Throwable =>
-              dependencies1.cons(Document.Node.Entry(name, Document.Node.bad_header(Exn.message(e))))
+              val header = Document.Node.Header.exn(e)
+              val entry = Resources.Thy.make(thy, header, options = options, initiators = initiators)
+              dependencies1.cons(entry)
           }
         }
       }
     }
 
-    def require_thys(adjunct: A,
+    def require_thys(
+        session_options: Options,
         thys: List[(Document.Node.Name, Position.T)],
-        progress: Progress = new Progress,
-        initiators: List[Document.Node.Name] = Nil
-    ): Dependencies[A] = {
-      thys.foldLeft(this)(_.require_thy(adjunct, _, progress = progress, initiators = initiators))
+        options: Options.Update = Nil,
+        initiators: List[Document.Node.Name] = Nil,
+        progress: Progress = new Progress
+    ): Dependencies = {
+      thys.foldLeft(this)(
+        _.require_thy(session_options, _,
+            options = options, initiators = initiators, progress = progress))
     }
 
-    def entries: List[Document.Node.Entry] = rev_entries.reverse
-
+    def entries: List[Resources.Thy] = rev_entries.reverse
     def theories: List[Document.Node.Name] = entries.map(_.name)
-    def theories_adjunct: List[(Document.Node.Name, A)] = theories.map(name => (name, seen(name)))
 
-    def errors: List[String] = entries.flatMap(_.header.errors)
+    def errors: List[String] = entries.flatMap(_.errors)
 
-    def check_errors: Dependencies[A] =
+    def check_errors: Dependencies =
       errors match {
         case Nil => this
         case errs => error(cat_lines(errs))
@@ -361,27 +408,30 @@ class Resources(
       val irregular =
         (for {
           entry <- entries.iterator
-          (imp, _) <- entry.header.imports
+          imp <- entry.imports
           if !regular(imp)
         } yield imp).toSet
 
       Document.Node.Name.make_graph(
         irregular.toList.map(name => ((name, ()), Nil)) :::
-        entries.map(entry => ((entry.name, ()), entry.header.imports_no_pos)))
+        entries.map(entry => ((entry.name, ()), entry.imports)))
     }
 
     lazy val loaded_theories: Graph[String, Outer_Syntax] =
       entries.foldLeft(session_base.loaded_theories) {
         case (graph, entry) =>
           val name = entry.name.theory
-          val imports = entry.header.imports.map({ case (name, _) => name.theory })
+          val imports = entry.imports.map(_.theory)
 
           val graph1 = (name :: imports).foldLeft(graph)(_.default_node(_, Outer_Syntax.empty))
           val graph2 = imports.foldLeft(graph1)(_.add_edge(_, name))
 
-          val syntax0 = if (name == Thy_Header.PURE) List(Thy_Header.bootstrap_syntax) else Nil
+          val syntax0 = if (Sessions.is_Pure(name)) List(Thy_Header.bootstrap_syntax) else Nil
           val syntax1 = (name :: graph2.imm_preds(name).toList).map(graph2.get_node)
-          val syntax = Outer_Syntax.merge(syntax0 ::: syntax1) + entry.header
+          val syntax =
+            Outer_Syntax.merge(syntax0 ::: syntax1)
+              .add_keywords(entry.keywords)
+              .add_abbrevs(entry.abbrevs)
 
           graph2.map_node(name, _ => syntax)
       }
@@ -402,7 +452,7 @@ class Resources(
       val theory = name.theory
       val syntax = get_syntax(name)
       val files1 = resources.loaded_files(syntax, name, spans)
-      val files2 = if (theory == Thy_Header.PURE) pure_files(syntax) else Nil
+      val files2 = if (Sessions.is_Pure(theory)) pure_files(syntax) else Nil
       (theory, files1 ::: files2)
     }
 
@@ -430,7 +480,8 @@ class Resources(
 
   /* resolve implicit theory dependencies */
 
-  def resolve_dependencies[A](
+  def resolve_dependencies(
+    session_options: Options,
     models: Iterable[Document.Model],
     theories: List[Document.Node.Name]
   ): List[Document.Node.Name] = {
@@ -439,7 +490,7 @@ class Resources(
         yield (model.node_name, Position.none)).toList
 
     val thy_files1 =
-      dependencies(model_theories ::: theories.map((_, Position.none))).theories
+      dependencies(session_options, model_theories ::: theories.map((_, Position.none))).theories
 
     val thy_files2 =
       (for {

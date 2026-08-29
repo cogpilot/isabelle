@@ -11,12 +11,24 @@ import java.io.{File => JFile, PrintStream, ByteArrayOutputStream, OutputStream}
 
 import scala.collection.mutable
 
+import dotty.tools.dotc.core.Constants.Constant
+import dotty.tools.dotc.core.Contexts.{Context, ContextBase}
 import dotty.tools.dotc.CompilationUnit
 import dotty.tools.repl
 import dotty.tools.repl.ReplDriver
 
 
 object Scala {
+  /** syntax **/
+
+  def print_string(s: String): String = {
+    val baseCtx = new ContextBase
+    given Context = baseCtx.initialCtx
+    baseCtx.settings.color.update("never")
+    Constant(s).show
+  }
+
+
   /** registered functions **/
 
   abstract class Fun(val name: String, val thread: Boolean = false) {
@@ -50,12 +62,6 @@ object Scala {
     override def invoke(session: Session, args: List[Bytes]): List[Bytes] =
       List(apply(Library.the_single(args)))
     def apply(arg: Bytes): Bytes
-  }
-
-  val encode_fun: XML.Encode.T[Fun] = { fun =>
-    import XML.Encode._
-    pair(string, pair(pair(bool, bool), properties))(
-      fun.name, ((fun.single, fun.bytes), fun.position))
   }
 
   class Functions(val functions: Fun*) extends Isabelle_System.Service

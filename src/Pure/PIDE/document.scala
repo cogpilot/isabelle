@@ -88,24 +88,40 @@ object Document {
   object Node {
     /* header and name */
 
+    object Header {
+      val none: Node.Header = Node.Header()
+      def exn(e: Throwable): Node.Header = Node.Header(errors = List(Exn.message(e)))
+    }
+
     sealed case class Header(
       imports: List[(Name, Position.T)] = Nil,
       options: Options.Update = Nil,
       keywords: Thy_Header.Keywords = Nil,
       abbrevs: Thy_Header.Abbrevs = Nil,
+      condition_bad: String = "",
       errors: List[String] = Nil
     ) {
-      def imports_no_pos: List[Name] = imports.map(_._1)
+      val imports_no_pos: List[Name] = imports.map(_._1)
 
-      def append_errors(msgs: List[String]): Header =
-        copy(errors = errors ::: msgs)
+      def eq_no_pos(other: Node.Header): Boolean =
+        imports_no_pos == other.imports_no_pos &&
+        options == other.options &&
+        keywords == other.keywords &&
+        abbrevs == other.abbrevs &&
+        condition_bad == other.condition_bad &&
+        errors == other.errors
 
-      def cat_errors(msg2: String): Header =
-        copy(errors = errors.map(msg1 => Exn.cat_message(msg1, msg2)))
+      def append_errors(msgs: List[String]): Node.Header =
+        if (msgs.isEmpty) this
+        else copy(errors = errors ::: msgs)
+
+      def cat_errors(make_msg2: => String): Node.Header =
+        if (errors.isEmpty) this
+        else {
+          val msg2 = make_msg2
+          copy(errors = errors.map(msg1 => Exn.cat_message(msg1, msg2)))
+        }
     }
-
-    val no_header: Header = Header()
-    def bad_header(msg: String): Header = Header(errors = List(msg))
 
     object Name {
       def apply(node: String, theory: String = ""): Name = new Name(node, theory)
@@ -150,10 +166,6 @@ object Document {
         JSON.Object("node_name" -> node, "theory_name" -> theory)
     }
 
-    sealed case class Entry(name: Node.Name, header: Node.Header) {
-      override def toString: String = name.toString
-    }
-
 
     /* node overlays */
 
@@ -193,7 +205,7 @@ object Document {
     case class Blob[A, B](blob: Blobs.Item) extends Edit[A, B]
 
     case class Edits[A, B](edits: List[A]) extends Edit[A, B]
-    case class Deps[A, B](header: Header) extends Edit[A, B]
+    case class Deps[A, B](header: Node.Header) extends Edit[A, B]
     case class Perspective[A, B](required: Boolean, visible: B, overlays: Overlays) extends Edit[A, B]
 
 
@@ -299,7 +311,7 @@ object Document {
 
   final class Node private(
     val get_blob: Option[Blobs.Item] = None,
-    val header: Node.Header = Node.no_header,
+    val header: Node.Header = Node.Header.none,
     val syntax: Option[Outer_Syntax] = None,
     val text_perspective: Text.Perspective = Text.Perspective.empty,
     val perspective: Node.Perspective_Command.T = Node.Perspective_Command.empty,
@@ -307,12 +319,12 @@ object Document {
   ) {
     def is_empty: Boolean =
       get_blob.isEmpty &&
-      header == Node.no_header &&
+      header == Node.Header.none &&
       text_perspective.is_empty &&
       Node.Perspective_Command.is_empty(perspective) &&
       commands.isEmpty
 
-    def has_header: Boolean = header != Node.no_header
+    def has_header: Boolean = header != Node.Header.none
 
     override def toString: String =
       if (is_empty) "empty"
@@ -914,13 +926,13 @@ object Document {
       val edits: List[Node.Edit[Text.Edit, Text.Perspective]] =
         get_blob match {
           case None =>
+            val errors =
+              if (session.resources.loaded_theory(node_name)) {
+                List("Cannot update finished theory " + quote(node_name.theory))
+              }
+              else Nil
             List(
-              Node.Deps(
-                if (session.resources.loaded_theory(node_name)) {
-                  node_header.append_errors(
-                    List("Cannot update finished theory " + quote(node_name.theory)))
-                }
-                else node_header),
+              Node.Deps(node_header.append_errors(errors)),
               Node.Edits(text_edits), perspective)
           case Some(blob) => List(Node.Blob(blob), Node.Edits(text_edits))
         }

@@ -8,7 +8,6 @@ package isabelle
 
 
 import java.io.{File => JFile, FileInputStream}
-import java.security.MessageDigest
 import java.util.HexFormat
 import java.math.BigInteger
 
@@ -37,6 +36,12 @@ object Message_Digest {
     def compare(dig1: T, dig2: T): Int = dig1.rep compare dig2.rep
   }
 
+  trait Builder {
+    def update(input: Array[Byte]): Unit = update(input, 0, input.length)
+    def update(input: Array[Byte], offset: Int, length: Int): Unit
+    def digest(): Array[Byte]
+  }
+
   abstract class Ops private[isabelle](val kind: String, val digest_length: Int) {
     val prefix: String = kind + ":"
     def print_length: Int = prefix.length + digest_length
@@ -47,12 +52,12 @@ object Message_Digest {
       else error("Bad message digest " + t + " (expected " + kind + ")")
     }
 
-    def make(update: MessageDigest => Unit): T = {
-      val dig = MessageDigest.getInstance(kind).nn
-      update(dig)
-      val res = dig.digest().nn
+    def make(update: Builder => Unit): T = {
+      val builder = platform.message_digest_provider.builder(kind)
+      update(builder)
+      val res = builder.digest()
 
-      val n = dig.getDigestLength * 2
+      val n = res.length * 2
       assert(n == digest_length)
       new T(prefix, Library.format("%0" + n + "x", new BigInteger(1, res)))
     }
@@ -75,6 +80,10 @@ object Message_Digest {
     def digest(bytes: Array[Byte], offset: Int, length: Int): T =
       make(_.update(bytes, offset, length))
     def digest(string: String): T = digest(UTF8.bytes(string))
+
+    val digest_true: T = digest("true")
+    val digest_false: T = digest("false")
+    def digest(b: Boolean): T = if (b) digest_true else digest_false
 
     def digest(shasum: Shasum): T = {
       shasum.rep match {

@@ -424,9 +424,9 @@ final class Bytes private(
 
   /* hash and equality */
 
-  def update_digest(dig: MessageDigest): Unit =
+  def update_digest(builder: Message_Digest.Builder): Unit =
     for (a <- subarray_iterator if a.length > 0) {
-      dig.update(a.array, a.offset, a.length)
+      builder.update(a.array, a.offset, a.length)
     }
 
   lazy val sha1_digest: Message_Digest.T =
@@ -446,12 +446,12 @@ final class Bytes private(
         else if (size != other.size) false
         else {
           if (chunks.isEmpty && other.chunks.isEmpty) {
-            Arrays.equals(chunk0, offset.toInt, (offset + size).toInt,
-              other.chunk0, other.offset.toInt, (other.offset + other.size).toInt)
+            Library.array_equals(chunk0, offset.toInt, size.toInt,
+              other.chunk0, other.offset.toInt, other.size.toInt)
           }
           else if (!is_sliced && !other.is_sliced) {
             (subarray_iterator zip other.subarray_iterator)
-              .forall((a, b) => Arrays.equals(a.array, b.array))
+              .forall((a, b) => Library.array_equals(a.array, b.array))
           }
           else sha256_digest == other.sha256_digest
         }
@@ -587,11 +587,11 @@ final class Bytes private(
       byte_unchecked(3) == 0xFD.toByte
 
   def uncompress_xz(cache: Compress.Cache = Compress.Cache.none): Bytes =
-    using(new xz.XZInputStream(stream(), cache.for_xz))(Bytes.read_stream(_, hint = size))
+    using(new xz.XZInputStream(stream(), cache.xz))(Bytes.read_stream(_, hint = size))
 
   def uncompress_zstd(cache: Compress.Cache = Compress.Cache.none): Bytes = {
     Zstd.init()
-    using(new zstd.ZstdInputStream(stream(), cache.for_zstd))(Bytes.read_stream(_, hint = size))
+    using(new zstd.ZstdInputStream(stream(), cache.zstd))(Bytes.read_stream(_, hint = size))
   }
 
   def uncompress(cache: Compress.Cache = Compress.Cache.none): Bytes =
@@ -607,9 +607,9 @@ final class Bytes private(
       using(
         options match {
           case options_xz: Compress.Options_XZ =>
-            new xz.XZOutputStream(out, options_xz.make, cache.for_xz)
+            new xz.XZOutputStream(out, options_xz.make, cache.xz)
           case options_zstd: Compress.Options_Zstd =>
-            new zstd.ZstdOutputStream(out, cache.for_zstd, options_zstd.level)
+            new zstd.ZstdOutputStream(out, cache.zstd, options_zstd.level)
         }
       ) { s => for (a <- subarray_iterator) s.write(a.array, a.offset, a.length) }
     }

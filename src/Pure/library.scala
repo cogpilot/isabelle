@@ -11,6 +11,7 @@ import java.util.Locale
 
 import scala.annotation.tailrec
 import scala.collection.mutable
+import scala.collection.immutable
 import scala.util.matching.Regex
 
 
@@ -157,7 +158,7 @@ object Library {
   def split_lines(str: String): List[String] = space_explode('\n', str)
 
   def prefix_lines(prfx: String, str: String): String =
-    isabelle.setup.Library.prefix_lines(prfx, str).nn
+    cat_lines(split_lines(str).map(prfx + _))
 
   def indent_lines(n: Int, str: String): String =
     if (n == 0) str else prefix_lines(Symbol.spaces(n), str)
@@ -180,9 +181,9 @@ object Library {
 
   /* locales */
 
-  val locale_root: Locale = Locale.ROOT.nn
-  val locale_english: Locale = Locale.ENGLISH.nn
-  val locale_german: Locale = Locale.GERMAN.nn
+  def locale_root: Locale = Locale.ROOT.nn
+  def locale_english: Locale = Locale.ENGLISH.nn
+  def locale_german: Locale = Locale.GERMAN.nn
 
 
   /* strings */
@@ -349,6 +350,28 @@ object Library {
   }
 
 
+  /* arrays */
+
+  def array_equals[A](
+    a: Array[A],
+    a_offset: Int,
+    a_size: Int,
+    b: Array[A],
+    b_offset: Int,
+    b_size: Int
+  ): Boolean = {
+    if (a.eq(b) && a_offset == b_offset && a_size == b_size) true
+    else if (a_size != b_size) false
+    else {
+      immutable.ArraySeq.unsafeWrapArray(a).slice(a_offset, a_offset + a_size) ==
+        immutable.ArraySeq.unsafeWrapArray(b).slice(b_offset, b_offset + b_size)
+    }
+  }
+
+  def array_equals[A](a: Array[A], b: Array[A]): Boolean =
+    array_equals(a, 0, a.length, b, 0, b.length)
+
+
   /* proper values */
 
   def proper_value[A](x: A | Null): Option[A] =
@@ -372,6 +395,14 @@ object Library {
 
 
   /* reflection */
+
+  def has_super_class_name(a: AnyRef, name: String): Boolean = {
+    import scala.language.existentials
+    @tailrec def check_name(c: Class[_]): Boolean = {
+      c.getName.nn == name || { val d = c.getSuperclass; d != null && check_name(d) }
+    }
+    check_name(a.getClass.nn)
+  }
 
   def is_subclass[A, B](a: Class[A], b: Class[B]): Boolean = {
     import scala.language.existentials

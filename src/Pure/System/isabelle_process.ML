@@ -8,19 +8,14 @@ signature ISABELLE_PROCESS =
 sig
   val reset_tracing: Document_ID.exec -> unit
   val crashes: exn list Synchronized.var
-  val init_options: unit -> unit
   val init: unit -> unit
   val init_build: unit -> unit
+  val init_options: unit -> unit
+  val update_options: Options.update -> unit
 end;
 
 structure Isabelle_Process: ISABELLE_PROCESS =
 struct
-
-(* print modes *)
-
-val protocol_modes1 = [Syntax_Trans.no_bracketsN, Syntax_Trans.no_type_bracketsN];
-val protocol_modes2 = [Print_Mode.PIDE];
-
 
 (* restricted tracing messages *)
 
@@ -72,17 +67,21 @@ fun recover crash =
 
 fun ml_statistics () =
   Output.protocol_message
-    (Markup.ML_statistics {pid = ML_Pid.get (), stats_dir = getenv "POLYSTATSDIR"}) [];
+    (Markup.ML_statistics {pid = PolyML.ml_pid (), stats_dir = getenv "POLYSTATSDIR"}) [];
 
 in
 
-fun init_protocol modes = Thread_Attributes.uninterruptible (fn _ => fn (address, password) =>
+val init_protocol = Thread_Attributes.uninterruptible (fn _ => fn modes =>
   let
     val _ = Output.physical_stderr Symbol.STX;
 
 
     (* streams *)
 
+    val (address, password) =
+      (case TextIO.inputLine TextIO.stdIn |> Option.map (trim_line #> space_explode " ") of
+        SOME [address, password] => (address, password)
+      | _ => raise Fail "Cannot read system channel address/password");
     val (in_stream, out_stream) = Socket_IO.open_streams address;
     val _ = Byte_Message.write_line out_stream (Bytes.string password);
 
@@ -137,7 +136,7 @@ fun init_protocol modes = Thread_Attributes.uninterruptible (fn _ => fn (address
       Unsynchronized.setmp Private_Output.protocol_message_fn
         (fn props => fn chunks => message Markup.protocolN props chunks) #>
       Unsynchronized.setmp print_mode
-        ((! print_mode @ #1 modes) |> fold (update op =) (#2 modes));
+        ((! print_mode @ modes) |> update (op =) Print_Mode.PIDE);
 
 
     (* protocol *)
@@ -179,14 +178,14 @@ fun init_protocol modes = Thread_Attributes.uninterruptible (fn _ => fn (address
     val _ = Options.set_process_default NONE;
   in
     (case result of
-      Exn.Exn (Protocol_Command.STOP rc) =>
-        if rc = 0 then ()
-        else if rc = 1 then OS.Process.exit OS.Process.failure
-        else OS.Process.exit (RunCall.unsafeCast (Word8.fromInt rc))
+      Exn.Exn (Protocol_Command.STOP rc) => if rc = 0 then () else PolyML.exit rc
     | _ => Exn.release result)
   end);
 
 end;
+
+fun init () = init_protocol [Syntax_Trans.no_bracketsN, Syntax_Trans.no_type_bracketsN];
+fun init_build () = init_protocol [];
 
 
 (* init options *)
@@ -206,20 +205,7 @@ fun init_options () =
     Context.data_timing := Options.default_bool \<^system_option>\<open>context_data_timing\<close>
   end;
 
-
-(* generic init *)
-
-fun init_modes modes =
-  let
-    val address = Options.default_string \<^system_option>\<open>system_channel_address\<close>;
-    val password = Options.default_string \<^system_option>\<open>system_channel_password\<close>;
-  in
-    if address <> "" andalso password <> ""
-    then init_protocol modes (address, password)
-    else init_options ()
-  end;
-
-fun init () = init_modes (protocol_modes1, protocol_modes2);
-fun init_build () = init_modes ([], protocol_modes2);
+fun update_options upd =
+  (Options.update_process_default upd; init_options ());
 
 end;

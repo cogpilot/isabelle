@@ -218,15 +218,20 @@ final class Other_Isabelle private(
         val isabelle_console = isabelle_home + Path.explode("lib/Tools/console")
         if (ssh.is_file(isabelle_console) &&
             ssh.read(isabelle_console).containsSlice("isabelle.ML_Console")) {
-          val Pattern = """.*val ML_PLATFORM = "(.*)".*""".r
+          val Pattern = """(?s).*val ML_PLATFORM = "(.*)".*""".r
           val input = """val ML_PLATFORM = Option.getOpt (OS.Process.getEnv "ML_PLATFORM", "")"""
           val result = bash("bin/isabelle console -r", input = input)
-          result.out match {
-            case Pattern(a) if result.ok && a.nonEmpty => a
-            case _ =>
-              error("Cannot get ML_PLATFORM from other Isabelle: " + isabelle_home +
-                if_proper(result.err, "\n" + result.err) + error_context)
+          if (result.ok) {
+            result.out match {
+              case Pattern(a) if a.nonEmpty => a
+              case _ =>
+                error("Cannot get ML_PLATFORM from other Isabelle: " + isabelle_home +
+                  if_proper(result.out, "\n" + Library.prefix_lines("stdout: ", result.out)) +
+                  if_proper(result.err, "\n" + Library.prefix_lines("stderr: ", result.err)) +
+                  error_context)
+            }
           }
+          else getenv_strict("ML_PLATFORM")
         }
         else getenv_strict("ML_PLATFORM")
       }

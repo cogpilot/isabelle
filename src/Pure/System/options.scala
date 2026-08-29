@@ -230,11 +230,12 @@ object Options {
             (options: Options) => options.declare(a.isDefined, pos, b, c, d, e, f, g) }
     }
 
-    val prefs_entry: Parser[Options => Options] = {
+    val prefs_spec: Parser[Options.Spec] =
       option_name ~ ($$$("=") ~! option_value) ^^
-      { case a ~ (_ ~ b) => (options: Options) =>
-          options + Options.Spec.eq(a, b, permissive = true) }
-    }
+      { case a ~ (_ ~ b) => Options.Spec.eq(a, b, permissive = true) }
+
+    val prefs_entry: Parser[Options => Options] =
+      prefs_spec ^^ (spec => (options: Options) => options + spec)
 
     def parse_file(
       options: Options,
@@ -255,6 +256,22 @@ object Options {
 
     def parse_prefs(options: Options, content: String): Options =
       parse_file(options, PREFS.file_name, content, syntax = prefs_syntax, parser = prefs_entry)
+
+    def parse_prefs_specs(content: String, start: Token.Pos): List[Options.Spec] = {
+      val toks = Token.explode(prefs_syntax.keywords, content)
+      parse_all(rep(prefs_spec), Token.reader(toks, start)) match {
+        case Success(result, _) => result
+        case bad => error(bad.toString)
+      }
+    }
+  }
+
+  def parse_prefs(content: String,
+    unknown: String => Boolean = _ => false,
+    start: Token.Pos = Token.Pos.none
+  ): List[Options.Change] = {
+    Parsers.parse_prefs_specs(content, start).map(spec =>
+      Change(spec.name, spec.value.getOrElse(""), unknown = unknown(spec.name)))
   }
 
   def read_prefs(file: Path = PREFS): String =
@@ -333,9 +350,14 @@ final class Options private(
 
   def iterator: Iterator[Options.Entry] = options.valuesIterator
 
-  override def toString: String =
-    "Options.init(prefs = " +
-      quote(quote(quote("\n" + Options.Change.print_prefs(changed())))) + ")"
+  override def toString: String = {
+    val prefs =
+      changed() match {
+        case Nil => quote("")
+        case ch => quote(quote(quote("\n" + Options.Change.print_prefs(ch))))
+      }
+    "Options.init(prefs = " + prefs + ")"
+  }
 
   private def print_entry(opt: Options.Entry): String =
     if_proper(opt.public, "public ") + opt.print

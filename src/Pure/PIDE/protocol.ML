@@ -18,10 +18,14 @@ val _ =
        raise Protocol_Command.STOP (Value.parse_int rc)));
 
 val _ =
-  Protocol_Command.define_bytes "Prover.options"
-    (fn [options_yxml] =>
-      (Options.set_process_default (SOME (Options.decode (YXML.parse_body_bytes options_yxml)));
-       Isabelle_Process.init_options ()));
+  Protocol_Command.define_bytes "Prover.update_options"
+    (fn [upd_yxml] =>
+      let
+        val upd = upd_yxml
+          |> YXML.parse_body_bytes
+          |> let open XML.Decode in list (pair string string) end
+          |> map (uncurry Options.spec);
+      in Isabelle_Process.update_options upd end);
 
 val _ =
   Protocol_Command.define_bytes "Prover.init_session"
@@ -31,7 +35,7 @@ val _ =
   Protocol_Command.define "Document.define_blob"
     (fn [digest, content] => Document.change_state (Document.define_blob digest content));
 
-fun decode_command id name parents_xml blobs_xml toks_xml sources : Document.command =
+fun decode_command id name kind parents_xml blobs_xml toks_xml sources : Document.command =
   let
     open XML.Decode;
     val parents = list string parents_xml;
@@ -53,6 +57,7 @@ fun decode_command id name parents_xml blobs_xml toks_xml sources : Document.com
   in
    {command_id = Document_ID.parse id,
     name = name,
+    kind = kind,
     parents = parents,
     blobs_digests = blobs_digests,
     blobs_index = blobs_index,
@@ -64,10 +69,10 @@ fun commands_accepted ids =
 
 val _ =
   Protocol_Command.define "Document.define_command"
-    (fn id :: name :: parents :: blobs :: toks :: sources =>
+    (fn id :: name :: kind :: parents :: blobs :: toks :: sources =>
       let
         val command =
-          decode_command id name (YXML.parse_body parents) (YXML.parse_body blobs)
+          decode_command id name kind (YXML.parse_body parents) (YXML.parse_body blobs)
             (YXML.parse_body toks) sources;
         val _ = Document.change_state (Document.define_command command);
       in commands_accepted [id] end);
@@ -79,10 +84,10 @@ val _ =
         fun decode arg =
           let
             open XML.Decode;
-            val (id, (name, (parents_xml, (blobs_xml, (toks_xml, sources))))) =
-              pair string (pair string (pair I (pair I (pair I (list string)))))
+            val (id, (name, (kind, (parents_xml, (blobs_xml, (toks_xml, sources)))))) =
+              pair string (pair string (pair string (pair I (pair I (pair I (list string))))))
                 (YXML.parse_body arg);
-          in decode_command id name parents_xml blobs_xml toks_xml sources end;
+          in decode_command id name kind parents_xml blobs_xml toks_xml sources end;
 
         val commands = map decode args;
         val _ = Document.change_state (fold Document.define_command commands);
@@ -115,8 +120,8 @@ val _ =
                      [fn ([], a) => Document.Edits (list (pair (option int) (option int)) a),
                       fn ([], a) =>
                         let
-                          val (master, (name, (imports, (options, (keywords, errors))))) =
-                            pair string (pair string (pair (list string)
+                          val (master_dir, (name, (imports, (options, (keywords, errors))))) =
+                            pair (Path.explode o string) (pair string (pair (list string)
                               (pair (list (pair string (option string)))
                               ((pair (list (pair string (pair string (list string))))
                                 (list YXML.string_of_body)))))) a;
@@ -126,7 +131,9 @@ val _ =
                             map (fn (x, y) => ((x, Position.none), Keyword.command_spec y)) keywords;
                           val header =
                             Thy_Header.make (name, Position.none) imports' options' keywords';
-                        in Document.Deps {master = master, header = header, errors = errors} end,
+                        in
+                          Document.Deps {master_dir = master_dir, header = header, errors = errors}
+                        end,
                       fn (a :: b, c) =>
                         Document.Perspective (bool_atom a, map int_atom b,
                           list (pair int (pair string (list string))) c)])

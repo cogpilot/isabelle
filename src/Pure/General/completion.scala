@@ -205,7 +205,7 @@ object Completion {
             List(original, xname1).map(Token.explode(Keyword.Keywords.empty, _)) match {
               case List(List(tok), _) if tok.kind == Token.Kind.CARTOUCHE =>
                 Symbol.cartouche_decoded(xname1)
-              case List(_, List(tok)) if tok.is_name => xname1
+              case List(_, List(tok)) if tok.is_name || tok.kind == Token.Kind.CONTROL => xname1
               case _ => quote(xname1)
             }
           Item(range, original, full_name, description, replacement, 0, true)
@@ -381,12 +381,12 @@ final class Completion private(
 
         val (words_lex1, words_map1) =
           if (!is_word) (words_lex, words_map)
-          else if (text != "") (words_lex + abbr, words_map + abbrev)
+          else if (text.nonEmpty) (words_lex + abbr, words_map + abbrev)
           else (words_lex -- List(abbr), words_map - abbr)
 
         val (abbrevs_lex1, abbrevs_map1) =
           if (is_word) (abbrevs_lex, abbrevs_map)
-          else if (text != "") (abbrevs_lex + rev_abbr, abbrevs_map + (rev_abbr -> abbrev))
+          else if (text.nonEmpty) (abbrevs_lex + rev_abbr, abbrevs_map + (rev_abbr -> abbrev))
           else (abbrevs_lex -- List(rev_abbr), abbrevs_map - rev_abbr)
 
         new Completion(keywords, words_lex1, words_map1, abbrevs_lex1, abbrevs_map1)

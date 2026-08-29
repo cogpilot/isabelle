@@ -128,6 +128,7 @@ sources = \
   src/Pure/General/mailman.scala \
   src/Pure/General/mercurial.scala \
   src/Pure/General/message_digest.scala \
+  src/Pure/General/message_digest_jvm.scala \
   src/Pure/General/multi_map.scala \
   src/Pure/General/name_space.scala \
   src/Pure/General/output.scala \
@@ -143,6 +144,7 @@ sources = \
   src/Pure/General/sql.scala \
   src/Pure/General/ssh.scala \
   src/Pure/General/symbol.scala \
+  src/Pure/General/symbol_files.scala \
   src/Pure/General/time.scala \
   src/Pure/General/timing.scala \
   src/Pure/General/toml.scala \
